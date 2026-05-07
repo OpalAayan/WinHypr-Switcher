@@ -70,12 +70,14 @@ All keybinds are defined in [`keybinds.ahk`](keybinds.ahk) and can be freely cus
 
 ```
 WinHypr-Switcher/
-        ├──keybinds.ahk        //<- Entry point (run this as Admin)
-        ├──WinHypr.ahk        //<- Backend API ~ DLL wrappers, smart logic, safety
-        ├──VirtualDesktopAccessor.dll //<- COM bridge to Windows virtual desktop API
+        ├── keybinds.ahk                 ← Entry point (run this as Admin)
+        ├── WinHypr.ahk                  ← Backend API ~ DLL wrappers, smart logic, safety
+        ├── VirtualDesktopAccessor.dll   ← COM bridge to Windows virtual desktop API
+        ├── setup.ps1                    ← One-click installer (registers task + starts daemon)
+        ├── uninstall.ps1                ← Clean uninstaller (kills daemon + removes task)
         ├── LICENSE
-        ├──.gitignore   
-        └──README.md
+        ├── .gitignore
+        └── README.md
 ```
 
 ### How It Works
@@ -116,48 +118,69 @@ A global `isSwitching` lock (with `try/finally` guarantee) prevents concurrent t
 - **Windows 11** (22H2 or later recommended)
 - **[AutoHotkey v2.0+](https://www.autohotkey.com/)** -- do **not** install v1
 
-### Setup
+### Quick Setup (Recommended)
 
 1. Clone or download:
    ```
-   https://github.com/OpalAayan/WinHypr-Switcher.git
+   git clone https://github.com/OpalAayan/WinHypr-Switcher.git
    ```
 
-2. Ensure `VirtualDesktopAccessor.dll` is in the same directory as the `.ahk` files.
-
-3. **Run as Administrator:**
+2. Open **PowerShell as Administrator** and run:
+   ```powershell
+   cd path\to\WinHypr-Switcher
+   powershell -ExecutionPolicy Bypass -File .\setup.ps1
    ```
-   Right-click keybinds.ahk -> Run as administrator
-   Right-click WinHypr.ahk -> Run as administrator
+
+That's it. The setup script will:
+- ✅ Verify AutoHotkey v2 is installed
+- ✅ Validate all required files (`keybinds.ahk`, `VirtualDesktopAccessor.dll`)
+- ✅ Register a scheduled task to start Win-Hypr at logon (elevated)
+- ✅ Launch the daemon immediately
+
+> [!IMPORTANT]
+> Windows blocks hotkeys from reaching windows that run at a higher privilege level than the AHK script. **Always run Win-Hypr as Administrator** — the setup script handles this automatically via the scheduled task.
+
+### Uninstall
+
+To completely disable Win-Hypr and restore default keybinds:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+```
+
+This will:
+- 🛑 Terminate the Win-Hypr daemon
+- 🗑️ Remove the scheduled task (no more auto-start)
+- ✅ Verify everything is cleaned up
+
+Project files are left in place (dormant). Delete the folder manually if you want a full removal.
+
+To re-enable later, just run `setup.ps1` again.
+
+### Manual Setup (Advanced)
+
+If you prefer to set things up manually:
+
+1. Ensure `VirtualDesktopAccessor.dll` is in the same directory as the `.ahk` files.
+
+2. **Run as Administrator:**
+   ```
+   Right-click keybinds.ahk → Run as administrator
+   ```
+
+3. **Run on Boot** — Create a scheduled task in an elevated PowerShell:
+
+   ```powershell
+   $A = New-ScheduledTaskAction -Execute "C:\Path\To\AutoHotkey64.exe" -Argument '"C:\Path\To\keybinds.ahk"'
+   $T = New-ScheduledTaskTrigger -AtLogon
+   $P = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Administrators" -RunLevel Highest
+   $S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
+   $D = New-ScheduledTask -Action $A -Principal $P -Trigger $T -Settings $S
+   Register-ScheduledTask WinHypr -InputObject $D
    ```
 
 > [!IMPORTANT]
-> Windows blocks hotkeys from reaching windows that run at a higher privilege level than the AHK script. **Always run Win-Hypr as Administrator** if you use terminals, IDEs, or system tools launched with elevation.
-
-### Run on Boot (Administrator)
-
-Create a scheduled task in an elevated PowerShell:
-
-```powershell
-$A = New-ScheduledTaskAction -Execute "C:\Path\To\keybinds.ahk"
-$T = New-ScheduledTaskTrigger -AtLogon
-$P = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Administrators" -RunLevel Highest
-$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
-$D = New-ScheduledTask -Action $A -Principal $P -Trigger $T -Settings $S
-Register-ScheduledTask WinHypr -InputObject $D
-```
-### Example Path~
-
-```powershell
-$A = New-ScheduledTaskAction -Execute "C:\Users\Admin\GitCrub\WinHypr-Switcher\keybinds.ahk"
-$T = New-ScheduledTaskTrigger -AtLogon
-$P = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Administrators" -RunLevel Highest
-$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
-$D = New-ScheduledTask -Action $A -Principal $P -Trigger $T -Settings $S
-Register-ScheduledTask WinHypr -InputObject $D
-```
-> [!IMPORTANT]
-> Do not run this using **Nushell** use *powershell -c ("Above commands")* but I will recommend using **POWERSHELL** _only_
+> Do not run this using **Nushell** — use `powershell -c "commands"` or run from a native **PowerShell** session.
 
 ---
 
