@@ -155,9 +155,9 @@ powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
 This will:
-- 🛑 Terminate the Win-Hypr daemon
-- 🗑️ Remove the `WinHypr` scheduled task (no more auto-start)
-- ✅ Verify everything is cleaned up
+-  Terminate the Win-Hypr daemon
+-  Remove the `WinHypr` scheduled task (no more auto-start)
+-  Verify everything is cleaned up
 
 Project files are left in place (dormant). To re-enable later, just run `setup.ps1` again.
 
@@ -167,13 +167,13 @@ Win-Hypr injects `VirtualDesktopAccessor.dll` into the system, which causes Wind
 
 **`nuke.ps1`** handles this automatically. It will:
 
-1. 🔍 **Auto-discover** the WinHypr-Switcher directory (via scheduled task, script location, or common paths)
-2. 📋 **Unregister** the `WinHypr` scheduled task
-3. 💀 **Kill** all AutoHotkey processes
-4. 🔎 **Detect** IDE file-watchers (VS Code, VSCodium) and prompt to close them
-5. 🗂️ **Redirect** any Explorer windows browsing the target directory
-6. 🔓 **Force-close** all open file handles using Sysinternals `handle.exe`
-7. 💣 **Delete** the directory (retry loop with handle re-scanning between attempts)
+1. **Auto-discover** the WinHypr-Switcher directory (via scheduled task, script location, or common paths)
+2. **Unregister** the `WinHypr` scheduled task
+3. **Kill** all AutoHotkey processes
+4. **Detect** IDE file-watchers (VS Code, VSCodium) and prompt to close them
+5. **Redirect** any Explorer windows browsing the target directory
+6. **Force-close** all open file handles using Sysinternals `handle.exe`
+7. **Delete** the directory (retry loop with handle re-scanning between attempts)
 
 ```powershell
 # Auto-discovers and nukes the directory:
