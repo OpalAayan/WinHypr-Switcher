@@ -75,6 +75,7 @@ WinHypr-Switcher/
         ├── VirtualDesktopAccessor.dll   ← COM bridge to Windows virtual desktop API
         ├── setup.ps1                    ← One-click installer (registers task + starts daemon)
         ├── uninstall.ps1                ← Clean uninstaller (kills daemon + removes task)
+        ├── nuke.ps1                     ← Ruthless directory deletion (force-closes file locks)
         ├── LICENSE
         ├── .gitignore
         └── README.md
@@ -117,6 +118,7 @@ A global `isSwitching` lock (with `try/finally` guarantee) prevents concurrent t
 
 - **Windows 11** (22H2 or later recommended)
 - **[AutoHotkey v2.0+](https://www.autohotkey.com/)** -- do **not** install v1
+- **[Sysinternals Handle](https://learn.microsoft.com/en-us/sysinternals/downloads/handle)** *(optional, for full removal)* -- install via `winget install SysInternals.Handle`
 
 ### Quick Setup (Recommended)
 
@@ -142,7 +144,11 @@ That's it. The setup script will:
 
 ### Uninstall
 
-To completely disable Win-Hypr and restore default keybinds:
+Uninstalling is a **two-step process**: first *disable* Win-Hypr, then *delete* the folder.
+
+#### Step 1 — Disable (soft uninstall)
+
+Run the uninstall script to stop the daemon and remove the scheduled task:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
@@ -150,12 +156,45 @@ powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 
 This will:
 - 🛑 Terminate the Win-Hypr daemon
-- 🗑️ Remove the scheduled task (no more auto-start)
+- 🗑️ Remove the `WinHypr` scheduled task (no more auto-start)
 - ✅ Verify everything is cleaned up
 
-Project files are left in place (dormant). Delete the folder manually if you want a full removal.
+Project files are left in place (dormant). To re-enable later, just run `setup.ps1` again.
 
-To re-enable later, just run `setup.ps1` again.
+#### Step 2 — Nuke (full removal)
+
+Win-Hypr injects `VirtualDesktopAccessor.dll` into the system, which causes Windows to hold file locks (`OS Error 32: File in Use`) on the project directory. Explorer, terminal sessions, and IDE file-watchers can all prevent deletion.
+
+**`nuke.ps1`** handles this automatically. It will:
+
+1. 🔍 **Auto-discover** the WinHypr-Switcher directory (via scheduled task, script location, or common paths)
+2. 📋 **Unregister** the `WinHypr` scheduled task
+3. 💀 **Kill** all AutoHotkey processes
+4. 🔎 **Detect** IDE file-watchers (VS Code, VSCodium) and prompt to close them
+5. 🗂️ **Redirect** any Explorer windows browsing the target directory
+6. 🔓 **Force-close** all open file handles using Sysinternals `handle.exe`
+7. 💣 **Delete** the directory (retry loop with handle re-scanning between attempts)
+
+```powershell
+# Auto-discovers and nukes the directory:
+powershell -ExecutionPolicy Bypass -File .\nuke.ps1
+
+# Or specify the path explicitly:
+powershell -ExecutionPolicy Bypass -File .\nuke.ps1 -TargetPath "C:\path\to\WinHypr-Switcher"
+
+# Also force-kill VS Code / VSCodium:
+powershell -ExecutionPolicy Bypass -File .\nuke.ps1 -ForceKillApps
+```
+
+> [!NOTE]
+> `nuke.ps1` is **self-relocating** -- if you run it from inside the target directory, it will automatically copy itself to `%TEMP%` and relaunch. It also auto-escapes if your terminal is `cd`'d into the target. No manual steps required.
+
+> [!TIP]
+> For best results, install Sysinternals Handle beforehand:
+> ```powershell
+> winget install SysInternals.Handle
+> ```
+> Without `handle.exe`, the script can still kill processes and retry deletion, but cannot force-close individual file handles.
 
 ### Manual Setup (Advanced)
 
@@ -180,7 +219,7 @@ If you prefer to set things up manually:
    ```
 
 > [!IMPORTANT]
-> Do not run this using **Nushell** — use `powershell -c "commands"` or run from a native **PowerShell** session.
+> Do not run setup/uninstall/nuke scripts using **Nushell** — use `powershell -c "commands"` or run from a native **PowerShell** session.
 
 ---
 
@@ -193,6 +232,8 @@ If you prefer to set things up manually:
 | `FATAL: Could not resolve DLL export` | Your DLL version may be incompatible with your Windows build. [Download the latest DLL](https://github.com/Ciantic/VirtualDesktopAccessor/releases) |
 | Desktops overshoot (too many created) | Update to latest `WinHypr.ahk` — the deterministic loop fix resolves this |
 | Explorer crashes on rapid switching | The spam lock should prevent this. If it persists, increase `DEBOUNCE_MS` in `WinHypr.ahk` |
+| **Can't delete the folder** (OS Error 32) | Run `nuke.ps1` — it force-closes all file locks and deletes the directory. See [Nuke (full removal)](#step-2--nuke-full-removal) above |
+| `nuke.ps1` fails even after closing handles | Some locks are held by protected system processes. **Reboot** and run `nuke.ps1` immediately before opening anything |
 
 ---
 
