@@ -1,0 +1,12 @@
+# AutoHotkey
+*.exe
+*.bin
+
+# Editor
+*.code-workspace
+.vscode/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
