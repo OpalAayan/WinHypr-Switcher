@@ -3,7 +3,7 @@
 # =============================================================================
 # This script performs a full setup of Win-Hypr:
 #   1. Verifies administrator privileges
-#   2. Validates AutoHotkey v2 is installed and associated with .ahk files
+#   2. Locates AutoHotkey v2 via PATH, common paths, and registry (universal)
 #   3. Registers a scheduled task to run Win-Hypr at logon (elevated)
 #   4. Launches the daemon immediately
 #
@@ -34,30 +34,66 @@ function Test-Administrator {
 }
 
 function Find-AutoHotkey {
-    # Try to resolve the .ahk file association first (most reliable)
-    $ahkExe = (Get-ItemProperty "HKLM:\SOFTWARE\Classes\AutoHotkeyScript\Shell\Open\Command" -ErrorAction SilentlyContinue).'(default)'
-    if ($ahkExe) {
-        # Extract the executable path from something like: "C:\...\AutoHotkey64.exe" "%1" %*
-        if ($ahkExe -match '^"?([^"]+\.exe)') {
-            $resolved = $Matches[1]
-            if (Test-Path $resolved) { return $resolved }
+    # -------------------------------------------------------------------------
+    # Universal AHK Locator — strict fallback order:
+    #   1. $env:PATH  (Get-Command)   — handles Scoop, Chocolatey, and standard installs
+    #   2. Common hardcoded paths      — manual / MSI / portable installs
+    #   3. Registry file association   — classic installer (wrapped in try/catch)
+    # -------------------------------------------------------------------------
+
+    # -- Step 1: Search $env:PATH via Get-Command -----------------------------
+    # Try the most specific names first, then the generic shim name.
+    $pathNames = @("AutoHotkey64.exe", "AutoHotkey.exe", "AutoHotkeyUX.exe")
+    foreach ($name in $pathNames) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd -and (Test-Path $cmd.Source)) {
+            return $cmd.Source
         }
     }
 
-    # Fallback: search PATH
-    $inPath = Get-Command "AutoHotkey*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($inPath) { return $inPath.Source }
-
-    # Fallback: common install locations
+    # -- Step 2: Hardcoded common install locations ----------------------------
+    $scoopBase = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE "scoop" }
     $commonPaths = @(
+        # Standard v2 installer (MSI / setup.exe)
         "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe",
         "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey32.exe",
+        "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey.exe",
+        # UX launcher (v2 multi-version install)
+        "$env:ProgramFiles\AutoHotkey\UX\AutoHotkeyUX.exe",
         "$env:ProgramFiles\AutoHotkey\AutoHotkey64.exe",
         "$env:ProgramFiles\AutoHotkey\AutoHotkey.exe",
-        "${env:ProgramFiles(x86)}\AutoHotkey\AutoHotkey.exe"
+        # x86 fallback
+        "${env:ProgramFiles(x86)}\AutoHotkey\AutoHotkey.exe",
+        # Chocolatey
+        "$env:ProgramData\chocolatey\bin\AutoHotkey.exe",
+        "$env:ProgramData\chocolatey\lib\autohotkey\tools\AutoHotkey.exe",
+        # Scoop (uses $env:SCOOP or default ~/scoop)
+        (Join-Path $scoopBase "shims\AutoHotkey.exe"),
+        (Join-Path $scoopBase "apps\autohotkey\current\v2\AutoHotkey64.exe"),
+        (Join-Path $scoopBase "apps\autohotkey\current\v2\AutoHotkey.exe"),
+        (Join-Path $scoopBase "apps\autohotkey\current\AutoHotkey.exe")
     )
+
     foreach ($p in $commonPaths) {
         if (Test-Path $p) { return $p }
+    }
+
+    # -- Step 3: Registry file association (legacy fallback) ------------------
+    try {
+        $regKeys = @(
+            "HKLM:\SOFTWARE\Classes\AutoHotkeyScript\Shell\Open\Command",
+            "HKCU:\SOFTWARE\Classes\AutoHotkeyScript\Shell\Open\Command",
+            "HKLM:\SOFTWARE\Classes\.ahk\ShellNew\Command"
+        )
+        foreach ($key in $regKeys) {
+            $regVal = (Get-ItemProperty $key -ErrorAction SilentlyContinue).'(default)'
+            if ($regVal -and $regVal -match '^"?([^"]+\.exe)') {
+                $resolved = $Matches[1]
+                if (Test-Path $resolved) { return $resolved }
+            }
+        }
+    } catch {
+        # Registry keys absent or inaccessible -- fail silently.
     }
 
     return $null
